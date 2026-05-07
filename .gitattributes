@@ -1,0 +1,13 @@
+# Normalize EOL for all files that Git considers text files.
+* text=auto eol=lf
+
+# Windows scripts require CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Explicit binaries, in case the heuristic misfires
+*.png binary
+*.psd binary
+*.pdn binary
+*.ttf binary

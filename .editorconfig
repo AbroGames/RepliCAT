@@ -1,0 +1,12 @@
+root = true
+
+[*.cs]
+charset = utf-8
+end_of_line = lf
+max_line_length = 120
+tab_width = 4
+
+[*.md]
+charset = utf-8
+end_of_line = lf
+max_line_length = 120
