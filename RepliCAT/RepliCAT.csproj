@@ -1,9 +1,60 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
+        <!-- Универсальное значение версии, которое будет скопировано в Version, AssemblyVersion и FileVersion
+        Формат: Major.Minor.Patch
+        Major трогаем при изменениях, ломающих обратную совместимость
+        Minor - добавление новых фич, запланированое плавное устаревание API
+        Patch - небольшие фиксы и незначительный функционал
+         -->
+        <GeneralVersion>1.0.0</GeneralVersion>
+
+        <!--
+        Пререлизный тег, на случай, когда надо зарелизить что-то, что не должно попасть в релиз
+        alpha.x - для экспериментальных версий в активной разработке
+        beta.x - для пререлизных версий
+        пустое свойство - для стабильных версий
+        -->
+        <PrereleaseFlag></PrereleaseFlag>
+
+        <!-- Генерируем суффикс версии, если указан пререлизный флаг -->
+        <VersionSuffix Condition="'$(PrereleaseFlag)' != ''">-$(PrereleaseFlag)</VersionSuffix>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <!-- Базовые настройки проекта -->
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <!-- Метаданные проекта -->
+        <Version>$(GeneralVersion)$(VersionSuffix)</Version>
+        <Title>RepliCAT</Title>
+        <Authors>AbroGames</Authors>
+        <Description>RepliCAT</Description>
+        <Copyright>AbroGames</Copyright>
+        <PackageProjectUrl>https://github.com/AbroGames/RepliCAT</PackageProjectUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageIcon>icon.png</PackageIcon>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <!-- Настройка SourceLink для упрощения отладки либы конечным пользователем -->
+        <RepositoryUrl>https://github.com/AbroGames/RepliCAT</RepositoryUrl>
+        <IncludeSymbols>true</IncludeSymbols>
+        <IncludeSource>true</IncludeSource>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <!-- Дополнительные свойства для версии сборки и файла сборки внутри пакета -->
+        <AssemblyVersion>$(GeneralVersion)</AssemblyVersion>
+        <FileVersion>$(GeneralVersion)</FileVersion>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="../README.md" Pack="true" PackagePath="/"/>
+        <None Include="icon.png" Pack="true" PackagePath="/"/>
+    </ItemGroup>
 
 </Project>
