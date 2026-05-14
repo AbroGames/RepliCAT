@@ -25,7 +25,7 @@
         <!-- Базовые настройки проекта -->
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
+        <Nullable>disable</Nullable>
 
         <!-- Метаданные проекта -->
         <Version>$(GeneralVersion)$(VersionSuffix)</Version>
@@ -51,6 +51,11 @@
         <AssemblyVersion>$(GeneralVersion)</AssemblyVersion>
         <FileVersion>$(GeneralVersion)</FileVersion>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="GodotSharp" Version="4.7.1" />
+        <PackageReference Include="Serilog" Version="4.3.0" />
+    </ItemGroup>
 
     <ItemGroup>
         <None Include="../README.md" Pack="true" PackagePath="/"/>

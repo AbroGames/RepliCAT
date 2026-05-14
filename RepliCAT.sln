@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RepliCAT", "RepliCAT\RepliCAT.csproj", "{AB12D3DA-BD60-4E45-BF92-FD72BD6A8E0F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RepliCAT.Tests", "RepliCAT.Tests\RepliCAT.Tests.csproj", "{D404F2EB-56A1-47B1-A0B4-57931B37AF3F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,12 @@ Global
 		{AB12D3DA-BD60-4E45-BF92-FD72BD6A8E0F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AB12D3DA-BD60-4E45-BF92-FD72BD6A8E0F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AB12D3DA-BD60-4E45-BF92-FD72BD6A8E0F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D404F2EB-56A1-47B1-A0B4-57931B37AF3F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D404F2EB-56A1-47B1-A0B4-57931B37AF3F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D404F2EB-56A1-47B1-A0B4-57931B37AF3F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D404F2EB-56A1-47B1-A0B4-57931B37AF3F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
