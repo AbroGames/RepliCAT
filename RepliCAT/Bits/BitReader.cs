@@ -141,7 +141,7 @@ public ref struct BitReader
     /// Читает байты, по 8 бит каждый, заполняя <paramref name="destination"/> целиком.
     /// </summary>
     /// <param name="destination">Буфер для прочитанных байт</param>
-    public void ReadBytes(Span<byte> destination)
+    public void ReadBytes(scoped Span<byte> destination)
     {
         if (destination.IsEmpty)
         {
