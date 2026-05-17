@@ -149,7 +149,7 @@ public sealed class ReplicationCodecs
 
         if (type.IsEnum)
         {
-            return CreateEnumCodecMethod.MakeGenericMethod(type).Invoke(null, null);
+            return CreateEnumCodecMethod.MakeGenericMethod(type).Invoke(null, BindingFlags.DoNotWrapExceptions, null, null, null);
         }
 
         Type underlying = Nullable.GetUnderlyingType(type);
@@ -170,7 +170,8 @@ public sealed class ReplicationCodecs
             _derived[underlying] = inner;
         }
 
-        return CreateNullableCodecMethod.MakeGenericMethod(underlying).Invoke(this, [inner]);
+        return CreateNullableCodecMethod.MakeGenericMethod(underlying)
+            .Invoke(this, BindingFlags.DoNotWrapExceptions, null, [inner], null);
     }
 
     private static object CreateEnumCodec<TEnum>() where TEnum : unmanaged, Enum
