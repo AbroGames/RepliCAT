@@ -591,9 +591,19 @@ public class ReplicatorTests
         [Replicated] public NoCodec Value;
     }
 
-    public class ClassMember
+    public class QuantizedObject
     {
-        [Replicated] public Nested Value;
+        [Replicated, Quantize(0.1)] public Nested Value;
+    }
+
+    public class ToleranceObject
+    {
+        [Replicated(Tolerance = 0.5)] public Nested Value;
+    }
+
+    public class DelegateMember
+    {
+        [Replicated] public Action Value;
     }
 
     public class SetOnlyProperty
@@ -645,7 +655,9 @@ public class ReplicatorTests
     [InlineData(typeof(DictionaryMember), "Values", "ReplicatedDictionary")]
     [InlineData(typeof(HashSetMember), "Values", "HashSet")]
     [InlineData(typeof(StructMember), "Value", "codec")]
-    [InlineData(typeof(ClassMember), "Value", "not supported yet")]
+    [InlineData(typeof(QuantizedObject), "Value", "object member")]
+    [InlineData(typeof(ToleranceObject), "Value", "object member")]
+    [InlineData(typeof(DelegateMember), "Value", "delegate")]
     [InlineData(typeof(SetOnlyProperty), "Value", "getter")]
     [InlineData(typeof(IndexerMember), "Item", "indexer")]
     [InlineData(typeof(QuantizedString), "Value", "Quantize")]

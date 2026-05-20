@@ -23,6 +23,9 @@ internal sealed class ReplicationModelBuilder
     private static readonly MethodInfo CreateValueNodeMethod =
         typeof(ReplicationModelBuilder).GetMethod(nameof(CreateValueNode), BindingFlags.NonPublic | BindingFlags.Instance);
 
+    private static readonly MethodInfo CreateObjectNodeMethod =
+        typeof(ReplicationModelBuilder).GetMethod(nameof(CreateObjectNode), BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly ReplicationContext _context;
     private readonly object _lock = new();
     private readonly Dictionary<Type, ReplicationTypeModel> _models = new();
@@ -131,17 +134,41 @@ internal sealed class ReplicationModelBuilder
                 "Register a codec via ReplicationCodecs.Register before the type model is built.");
         }
 
-        // Шаги 6–8: вложенные объекты, ReplicatedList, ReplicatedDictionary.
-        throw new ReplicationException($"{path}: members of type {valueType.FullName} are not supported yet.");
-    }
+        if (typeof(Delegate).IsAssignableFrom(valueType))
+        {
+            throw new ReplicationException($"{path}: delegates ({valueType.FullName}) cannot be replicated.");
+        }
 
-    private static void ValidateModelType(Type type)
-    {
-        if (type.IsValueType || type.IsInterface || type.IsAbstract || type.IsArray || type.IsPointer || type.IsByRef
-            || type.ContainsGenericParameters)
+        // Шаги 7–8: ReplicatedList, ReplicatedDictionary — до объектной маршрутизации.
+
+        // Вложенный объект (класс, в том числе абстрактный, или интерфейс).
+        if (!options.IsDefault)
         {
             throw new ReplicationException(
-                $"Type {type.FullName} cannot be replicated: only concrete classes are supported as replicated objects.");
+                $"{path}: [Quantize] and Tolerance cannot be applied to an object member of type {valueType.FullName}.");
+        }
+
+        return (ReplicationNode)Invoke(CreateObjectNodeMethod.MakeGenericMethod(valueType), [path]);
+    }
+
+    /// <summary>
+    /// Проверяет, может ли тип иметь модель. Абстрактные классы допускаются: их модель описывает
+    /// объявленный тип полиморфного члена (для хэша схемы), но экземпляры создаются только для
+    /// конкретных runtime-типов.
+    /// </summary>
+    private static void ValidateModelType(Type type)
+    {
+        if (type.IsValueType || type.IsInterface || type.IsArray || type.IsPointer || type.IsByRef
+            || type.ContainsGenericParameters || typeof(Delegate).IsAssignableFrom(type))
+        {
+            throw new ReplicationException(
+                $"Type {type.FullName} cannot be replicated: only classes are supported as replicated objects.");
+        }
+
+        string collectionHint = GetCollectionHint(type);
+        if (collectionHint != null)
+        {
+            throw new ReplicationException($"Type {type.FullName} cannot be replicated: {collectionHint}");
         }
     }
 
@@ -338,6 +365,15 @@ internal sealed class ReplicationModelBuilder
         options.AppendSchema(schema);
 
         return new ValueNode<T>(codec, schema.ToString());
+    }
+
+    private ObjectNode<T> CreateObjectNode<T>(string path) where T : class
+    {
+        // Модель объявленного типа строится сразу: ошибки вложенных типов проявляются при построении
+        // модели корня. Для рекурсивных типов возвращается модель, члены которой еще строятся.
+        // У интерфейса модели нет: его члены не входят в модели реализаций.
+        ReplicationTypeModel declaredModel = typeof(T).IsInterface ? null : GetModel(typeof(T));
+        return new ObjectNode<T>(_context, declaredModel, path);
     }
 
     private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node)

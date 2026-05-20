@@ -47,8 +47,11 @@ internal abstract class ReplicationNode
     /// Дописывает каноническое описание узла для хэша схемы.
     /// </summary>
     /// <param name="sb">Построитель описания</param>
-    /// <param name="visited">Уже описанные типы объектов (для рекурсивных типов)</param>
-    public abstract void AppendSchema(StringBuilder sb, HashSet<Type> visited);
+    /// <param name="visited">
+    /// Уже описанные типы объектов и их порядковые номера в порядке обхода
+    /// (повторное упоминание типа описывается ссылкой на номер, что работает и для рекурсивных типов)
+    /// </param>
+    public abstract void AppendSchema(StringBuilder sb, Dictionary<Type, int> visited);
 }
 
 /// <summary>

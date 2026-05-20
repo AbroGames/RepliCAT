@@ -61,8 +61,9 @@ internal sealed class ReplicationContext
     {
         if (_depth >= Limits.MaxDepth)
         {
-            throw new ReplicationException(
-                $"{path}: maximum replication depth {Limits.MaxDepth} exceeded while writing (a cycle in the object graph?).");
+            throw ReplicationTypeModel.TagPath(new ReplicationException(
+                $"{path}: maximum replication depth {Limits.MaxDepth} exceeded while writing (a cycle in the object graph?)."),
+                path);
         }
 
         _depth++;
@@ -77,8 +78,8 @@ internal sealed class ReplicationContext
     {
         if (_depth >= Limits.MaxDepth)
         {
-            throw new ReplicationFormatException(
-                $"{path}: maximum replication depth {Limits.MaxDepth} exceeded while reading.");
+            throw ReplicationTypeModel.TagPath(new ReplicationFormatException(
+                $"{path}: maximum replication depth {Limits.MaxDepth} exceeded while reading."), path);
         }
 
         _depth++;

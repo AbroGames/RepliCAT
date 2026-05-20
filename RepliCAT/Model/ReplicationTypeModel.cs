@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using RepliCAT.Bits;
 using RepliCAT.Nodes;
@@ -188,16 +189,19 @@ internal sealed class ReplicationTypeModel
 
     /// <summary>
     /// Дописывает каноническое описание модели для хэша схемы.
-    /// Тип, уже описанный выше по дереву, описывается только ссылкой (рекурсивные типы).
+    /// Тип, уже описанный ранее при обходе, описывается только ссылкой на свой порядковый номер
+    /// (<c>ref(#N)</c>): так описание однозначно, даже если у двух разных типов одинаковое короткое имя,
+    /// и конечно для рекурсивных типов.
     /// </summary>
-    public void AppendSchema(StringBuilder sb, HashSet<Type> visited)
+    public void AppendSchema(StringBuilder sb, Dictionary<Type, int> visited)
     {
-        if (!visited.Add(Type))
+        if (visited.TryGetValue(Type, out int index))
         {
-            sb.Append("ref(").Append(Type.Name).Append(')');
+            sb.Append("ref(#").Append(index).Append(')');
             return;
         }
 
+        visited.Add(Type, visited.Count);
         sb.Append(Type.Name).Append('{');
         foreach (MemberReplicator member in _members)
         {
@@ -217,7 +221,7 @@ internal sealed class ReplicationTypeModel
         if (!_hasSchemaHash)
         {
             var sb = new StringBuilder();
-            AppendSchema(sb, new HashSet<Type>());
+            AppendSchema(sb, new Dictionary<Type, int>());
             _schemaHash = SchemaHash.Compute(sb.ToString());
             _hasSchemaHash = true;
         }
@@ -267,5 +271,41 @@ internal sealed class ReplicationTypeModel
             : new ReplicationException(message, e);
         wrapped.Data[PathDataKey] = path;
         return wrapped;
+    }
+
+    /// <summary>
+    /// Помечает исключение, сообщение которого уже содержит путь к члену, чтобы внешние уровни
+    /// не оборачивали его повторно (иначе путь дублируется в сообщении).
+    /// </summary>
+    /// <param name="e">Исключение с путем в сообщении</param>
+    /// <param name="path">Путь к члену</param>
+    /// <returns><paramref name="e"/></returns>
+    internal static TException TagPath<TException>(TException e, string path) where TException : Exception
+    {
+        e.Data[PathDataKey] = path;
+        return e;
+    }
+
+    /// <summary>
+    /// Создает экземпляр типа модели через конструктор без параметров (допускается непубличный).
+    /// Используется получателем, когда существующий экземпляр нельзя переиспользовать.
+    /// </summary>
+    /// <exception cref="ReplicationException">У типа нет конструктора без параметров</exception>
+    public object CreateInstance()
+    {
+        try
+        {
+            return Activator.CreateInstance(
+                Type,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                binder: null,
+                args: null,
+                culture: null);
+        }
+        catch (MissingMethodException e)
+        {
+            throw new ReplicationException(
+                $"Type {Type.FullName} has no parameterless constructor, so the receiver cannot create an instance of it.", e);
+        }
     }
 }

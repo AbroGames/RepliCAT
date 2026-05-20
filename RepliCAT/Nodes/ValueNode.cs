@@ -47,7 +47,7 @@ internal sealed class ValueNode<T> : ReplicationNode<T>
     }
 
     /// <inheritdoc/>
-    public override void AppendSchema(StringBuilder sb, HashSet<Type> visited)
+    public override void AppendSchema(StringBuilder sb, Dictionary<Type, int> visited)
     {
         sb.Append("value(").Append(_schema).Append(')');
     }

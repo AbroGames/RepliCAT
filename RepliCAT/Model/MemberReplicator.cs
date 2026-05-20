@@ -135,8 +135,8 @@ internal sealed class MemberReplicator<TOwner, TValue> : MemberReplicator where 
     {
         if (_setter == null)
         {
-            throw new ReplicationException(
-                $"{Path}: the member has no setter, but the received value requires assigning a new instance.");
+            throw ReplicationTypeModel.TagPath(new ReplicationException(
+                $"{Path}: the member has no setter, but the received value requires assigning a new instance."), Path);
         }
 
         _setter(owner, value);
