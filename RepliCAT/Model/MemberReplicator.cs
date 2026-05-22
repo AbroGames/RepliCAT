@@ -12,11 +12,13 @@ namespace RepliCAT.Model;
 /// </summary>
 internal abstract class MemberReplicator
 {
-    protected MemberReplicator(MemberInfo member, string path)
+    protected MemberReplicator(MemberInfo member, string path, bool isManual)
     {
         Member = member;
         Name = member.Name;
         Path = path;
+        IsManual = isManual;
+        DirtyName = GetDirtyName(member);
     }
 
     /// <summary>
@@ -35,9 +37,34 @@ internal abstract class MemberReplicator
     public string Path { get; }
 
     /// <summary>
+    /// <c>true</c> для manual-члена (<see cref="ReplicatedAttribute.Manual"/>): он не сравнивается
+    /// с тенью автоматически и всегда пишется целиком.
+    /// </summary>
+    public bool IsManual { get; }
+
+    /// <summary>
+    /// Имя, под которым член помечается через <see cref="ManualReplication.MarkDirty"/>: имя члена,
+    /// а для поля автосвойства (<c>[field: Replicated]</c>) — имя свойства, чтобы работал <c>nameof(Property)</c>.
+    /// </summary>
+    public string DirtyName { get; }
+
+    /// <summary>
     /// Узел, обрабатывающий значение члена.
     /// </summary>
     public abstract ReplicationNode Node { get; }
+
+    private static string GetDirtyName(MemberInfo member)
+    {
+        const string backingFieldSuffix = ">k__BackingField";
+        string name = member.Name;
+        if (member is FieldInfo && name.Length > backingFieldSuffix.Length + 1 && name[0] == '<'
+            && name.EndsWith(backingFieldSuffix, StringComparison.Ordinal))
+        {
+            return name.Substring(1, name.Length - backingFieldSuffix.Length - 1);
+        }
+
+        return name;
+    }
 
     /// <summary>
     /// Создает пустую тень члена.
@@ -53,7 +80,9 @@ internal abstract class MemberReplicator
     public abstract bool WriteDelta(object owner, Shadow shadow, BitWriter writer, bool forceAll);
 
     /// <summary>
-    /// Пишет содержимое тени члена (путь снимка). Владелец нужен только manual-членам (шаг 9).
+    /// Пишет содержимое тени члена (путь снимка). Manual-члены сюда не попадают:
+    /// <see cref="ReplicationTypeModel.WriteShadowMembers"/> пишет их из живого владельца через
+    /// <see cref="WriteDelta"/> с одноразовой тенью.
     /// </summary>
     public abstract void WriteShadow(object owner, Shadow shadow, BitWriter writer);
 
@@ -84,8 +113,9 @@ internal sealed class MemberReplicator<TOwner, TValue> : MemberReplicator where 
     /// <param name="getter">Геттер</param>
     /// <param name="setter">Сеттер или <c>null</c>, если член недоступен для записи</param>
     /// <param name="node">Узел значения</param>
+    /// <param name="isManual">Manual-член</param>
     public MemberReplicator(MemberInfo member, string path, Func<TOwner, TValue> getter, Action<TOwner, TValue> setter,
-        ReplicationNode<TValue> node) : base(member, path)
+        ReplicationNode<TValue> node, bool isManual) : base(member, path, isManual)
     {
         _getter = getter;
         _setter = setter;

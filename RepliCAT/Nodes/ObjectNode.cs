@@ -163,6 +163,8 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
         _context.EnterWrite(_path);
         try
         {
+            // Владелец для manual-членов — последняя отправленная ссылка (к ней относится состояние),
+            // даже если член уже указывает на другой объект: следующая дельта запишет новый объект целиком.
             objectShadow.Model.WriteShadowMembers(objectShadow.Ref, objectShadow.State, writer);
         }
         finally

@@ -340,7 +340,7 @@ internal sealed class ReplicationModelBuilder
         }
 
         MethodInfo factory = CreateValueMemberMethod.MakeGenericMethod(member.DeclaringType, memberType);
-        return (MemberReplicator)Invoke(factory, [member, path, node]);
+        return (MemberReplicator)Invoke(factory, [member, path, node, replicated?.Manual ?? false]);
     }
 
     private static PropertyInfo FindDeclaredProperty(Type type, string name)
@@ -443,7 +443,8 @@ internal sealed class ReplicationModelBuilder
         return new DictionaryNode<TKey, TValue>(_context, keyNode, valueNode, path);
     }
 
-    private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node)
+    private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node,
+        bool isManual)
         where TOwner : class
     {
         Func<TOwner, TValue> getter;
@@ -458,6 +459,7 @@ internal sealed class ReplicationModelBuilder
             throw new ReplicationException($"{path}: {e.Message}", e);
         }
 
-        return new MemberReplicator<TOwner, TValue>(member, path, getter, setter, (ReplicationNode<TValue>)node);
+        return new MemberReplicator<TOwner, TValue>(member, path, getter, setter, (ReplicationNode<TValue>)node,
+            isManual);
     }
 }

@@ -6,13 +6,15 @@ using RepliCAT.Nodes;
 namespace RepliCAT.Model;
 
 /// <summary>
-/// Состояние (тень) одного объекта: тени его членов в порядке модели.
+/// Состояние (тень) одного объекта: тени его членов в порядке модели и версии manual-членов.
+/// Состояние относится ровно к одному живому объекту (корню базовой копии или ссылке в тени узла объекта).
 /// </summary>
 internal sealed class ObjectState
 {
-    public ObjectState(Shadow[] members)
+    public ObjectState(Shadow[] members, int[] manualVersions)
     {
         Members = members;
+        ManualVersions = manualVersions;
     }
 
     /// <summary>
@@ -21,10 +23,17 @@ internal sealed class ObjectState
     public Shadow[] Members { get; }
 
     /// <summary>
-    /// Версии manual-членов на момент последней отправки. <c>null</c>, если у типа нет manual-членов
-    /// (manual-члены появятся на шаге 9, сейчас всегда <c>null</c>).
+    /// Версии manual-членов (<see cref="ManualReplication.MarkDirty"/>) на момент их последней отправки,
+    /// индекс совпадает с индексом члена в модели (для обычных членов не используется).
+    /// <c>null</c>, если у типа нет manual-членов.
     /// </summary>
-    public int[] ManualVersions { get; set; }
+    public int[] ManualVersions { get; }
+
+    /// <summary>
+    /// Общая версия таблицы пометок объекта (<see cref="ManualVersionTable.Stamp"/>), прочитанная
+    /// при последней проверке manual-членов. Пока она не изменилась, версии членов не перечитываются.
+    /// </summary>
+    public int ManualStamp { get; set; }
 }
 
 /// <summary>
@@ -39,6 +48,7 @@ internal sealed class ReplicationTypeModel
     private const string PathDataKey = "RepliCAT.MemberPath";
 
     private MemberReplicator[] _members;
+    private bool _hasManualMembers;
     private bool _hasSchemaHash;
     private ulong _schemaHash;
 
@@ -63,6 +73,7 @@ internal sealed class ReplicationTypeModel
     internal void SetMembers(MemberReplicator[] members)
     {
         _members = members;
+        _hasManualMembers = Array.Exists(members, static member => member.IsManual);
     }
 
     /// <summary>
@@ -76,13 +87,17 @@ internal sealed class ReplicationTypeModel
             shadows[i] = _members[i].CreateShadow();
         }
 
-        return new ObjectState(shadows);
+        return new ObjectState(shadows, _hasManualMembers ? new int[shadows.Length] : null);
     }
 
     /// <summary>
     /// Пишет тело объекта: маску членов и полезные нагрузки измененных членов.
     /// Если ничего не изменилось и <paramref name="forceAll"/> == <c>false</c>,
-    /// откатывает писатель и возвращает <c>false</c>.
+    /// откатывает писатель и возвращает <c>false</c>.<br/>
+    /// Manual-член не сравнивается с тенью: он пишется целиком (<c>forceAll</c>) при <paramref name="forceAll"/>
+    /// или если его версия (<see cref="ManualReplication.MarkDirty"/>) отличается от отправленной последней,
+    /// иначе пропускается вместе со всем своим поддеревом. Если с последней проверки объект не помечался,
+    /// версии членов не перечитываются, и путь не выделяет память.
     /// </summary>
     /// <param name="owner">Живой объект типа <see cref="Type"/></param>
     /// <param name="state">Состояние объекта, созданное этой моделью</param>
@@ -96,14 +111,48 @@ internal sealed class ReplicationTypeModel
         int maskStart = writer.BitPosition;
         WriteZeroBits(writer, members.Length);
 
+        // Manual-члены проверяются, только если с последней проверки объект помечался (или forceAll).
+        // Отметка читается до версий членов (см. ManualVersionTable.Stamp).
+        ManualVersionTable manualTable = null;
+        int manualStamp = 0;
+        bool checkManual = false;
+        if (_hasManualMembers)
+        {
+            manualTable = ManualReplication.GetTable(owner);
+            manualStamp = manualTable?.Stamp ?? 0;
+            checkManual = forceAll || (manualTable != null && manualStamp != state.ManualStamp);
+        }
+
         bool any = false;
         int i = 0;
         try
         {
             for (; i < members.Length; i++)
             {
+                MemberReplicator member = members[i];
+                if (member.IsManual)
+                {
+                    if (!checkManual)
+                    {
+                        continue;
+                    }
+
+                    int version = manualTable?.GetVersion(member.DirtyName) ?? 0;
+                    if (!forceAll && version == state.ManualVersions[i])
+                    {
+                        continue;
+                    }
+
+                    // Весь член (и его поддерево) целиком, в настоящую тень.
+                    member.WriteDelta(owner, shadows[i], writer, true);
+                    state.ManualVersions[i] = version;
+                    writer.SetBit(maskStart + i, true);
+                    any = true;
+                    continue;
+                }
+
                 int position = writer.BitPosition;
-                if (members[i].WriteDelta(owner, shadows[i], writer, forceAll))
+                if (member.WriteDelta(owner, shadows[i], writer, forceAll))
                 {
                     writer.SetBit(maskStart + i, true);
                     any = true;
@@ -119,6 +168,11 @@ internal sealed class ReplicationTypeModel
             throw WithPath(e, members[i].Path, false);
         }
 
+        if (checkManual)
+        {
+            state.ManualStamp = manualStamp;
+        }
+
         if (!any && !forceAll)
         {
             writer.Rewind(maskStart);
@@ -129,9 +183,17 @@ internal sealed class ReplicationTypeModel
     }
 
     /// <summary>
-    /// Путь снимка: пишет тело объекта из теней, все биты маски установлены.
+    /// Путь снимка: пишет тело объекта из теней, все биты маски установлены.<br/>
+    /// Manual-члены пишутся из <b>живого</b> владельца целиком, через <see cref="MemberReplicator.WriteDelta"/>
+    /// с одноразовой тенью: новый клиент получает текущее значение, а базовая копия не меняется.
+    /// Это согласуется с последующими дельтами: manual-член в них пишется только целиком
+    /// (объект — всеми членами, коллекция — сбросом), что перезаписывает все, что прислал снимок.
     /// </summary>
-    /// <param name="owner">Живой объект (нужен только manual-членам, шаг 9)</param>
+    /// <param name="owner">
+    /// Живой объект, к которому относится <paramref name="state"/>. Для вложенного объекта это последняя
+    /// отправленная ссылка: если ее уже заменили, manual-члены читаются из прежнего объекта, что согласуется
+    /// с остальным снимком (тип и прочие члены тоже прежние), а следующая дельта запишет новый объект целиком
+    /// </param>
     /// <param name="state">Состояние объекта, в которое уже была записана хотя бы одна дельта</param>
     /// <param name="writer">Писатель</param>
     public void WriteShadowMembers(object owner, ObjectState state, BitWriter writer)
@@ -145,7 +207,15 @@ internal sealed class ReplicationTypeModel
         {
             for (; i < members.Length; i++)
             {
-                members[i].WriteShadow(owner, shadows[i], writer);
+                MemberReplicator member = members[i];
+                if (member.IsManual)
+                {
+                    member.WriteDelta(owner, member.CreateShadow(), writer, true);
+                }
+                else
+                {
+                    member.WriteShadow(owner, shadows[i], writer);
+                }
             }
         }
         catch (Exception e) when (ShouldWrap(e))
@@ -205,7 +275,13 @@ internal sealed class ReplicationTypeModel
         sb.Append(Type.Name).Append('{');
         foreach (MemberReplicator member in _members)
         {
-            sb.Append(member.Name).Append(':');
+            sb.Append(member.Name);
+            if (member.IsManual)
+            {
+                sb.Append("!manual");
+            }
+
+            sb.Append(':');
             member.Node.AppendSchema(sb, visited);
             sb.Append(';');
         }
