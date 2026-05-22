@@ -26,6 +26,9 @@ internal sealed class ReplicationModelBuilder
     private static readonly MethodInfo CreateObjectNodeMethod =
         typeof(ReplicationModelBuilder).GetMethod(nameof(CreateObjectNode), BindingFlags.NonPublic | BindingFlags.Instance);
 
+    private static readonly MethodInfo CreateListNodeMethod =
+        typeof(ReplicationModelBuilder).GetMethod(nameof(CreateListNode), BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly ReplicationContext _context;
     private readonly object _lock = new();
     private readonly Dictionary<Type, ReplicationTypeModel> _models = new();
@@ -102,8 +105,8 @@ internal sealed class ReplicationModelBuilder
     }
 
     /// <summary>
-    /// Создает узел для значения указанного типа. Используется для членов, а на следующих шагах —
-    /// для элементов коллекций и значений словарей.
+    /// Создает узел для значения указанного типа. Используется для членов, элементов списков
+    /// и (шаг 8) значений словарей.
     /// </summary>
     /// <param name="valueType">Тип значения</param>
     /// <param name="options">Квантование и допуск</param>
@@ -139,7 +142,14 @@ internal sealed class ReplicationModelBuilder
             throw new ReplicationException($"{path}: delegates ({valueType.FullName}) cannot be replicated.");
         }
 
-        // Шаги 7–8: ReplicatedList, ReplicatedDictionary — до объектной маршрутизации.
+        if (IsReplicatedList(valueType))
+        {
+            // Quantize/Tolerance члена-списка относятся к элементам-значениям и передаются узлу элементов.
+            return (ReplicationNode)Invoke(
+                CreateListNodeMethod.MakeGenericMethod(valueType.GetGenericArguments()[0]), [options, path]);
+        }
+
+        // Шаг 8: ReplicatedDictionary — до объектной маршрутизации.
 
         // Вложенный объект (класс, в том числе абстрактный, или интерфейс).
         if (!options.IsDefault)
@@ -170,6 +180,18 @@ internal sealed class ReplicationModelBuilder
         {
             throw new ReplicationException($"Type {type.FullName} cannot be replicated: {collectionHint}");
         }
+
+        if (IsReplicatedList(type))
+        {
+            throw new ReplicationException(
+                $"Type {type.FullName} cannot be replicated as an object: a ReplicatedList can only be a member " +
+                "(or an item) declared with its exact type.");
+        }
+    }
+
+    private static bool IsReplicatedList(Type type)
+    {
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ReplicatedList<>);
     }
 
     private MemberReplicator[] BuildMembers(Type type)
@@ -374,6 +396,14 @@ internal sealed class ReplicationModelBuilder
         // У интерфейса модели нет: его члены не входят в модели реализаций.
         ReplicationTypeModel declaredModel = typeof(T).IsInterface ? null : GetModel(typeof(T));
         return new ObjectNode<T>(_context, declaredModel, path);
+    }
+
+    private ListNode<TItem> CreateListNode<TItem>(ValueOptions options, string path)
+    {
+        // Один узел элементов (и один кодек) на член: предупреждения квантователя выдаются один раз на член,
+        // а кэш модели ObjectNode общий для всех элементов.
+        var itemNode = (ReplicationNode<TItem>)CreateNode(typeof(TItem), options, path + "[]");
+        return new ListNode<TItem>(_context, itemNode, path);
     }
 
     private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node)

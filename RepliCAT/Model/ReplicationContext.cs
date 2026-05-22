@@ -1,3 +1,4 @@
+using RepliCAT.Bits;
 using RepliCAT.Codecs;
 using Serilog;
 
@@ -91,6 +92,58 @@ internal sealed class ReplicationContext
     public void Exit()
     {
         _depth--;
+    }
+
+    /// <summary>
+    /// Проверяет при записи, что коллекция не превышает <see cref="ReplicationLimits.MaxCollectionCount"/>:
+    /// иначе получатель отверг бы данные.
+    /// </summary>
+    /// <param name="count">Количество элементов (или идентификатор слота + 1)</param>
+    /// <param name="path">Путь к члену для сообщения</param>
+    /// <exception cref="ReplicationException">Лимит превышен</exception>
+    public void CheckCollectionCount(int count, string path)
+    {
+        if (count > Limits.MaxCollectionCount)
+        {
+            throw new ReplicationException(
+                $"{path}: the collection exceeds ReplicationLimits.MaxCollectionCount ({Limits.MaxCollectionCount}).");
+        }
+    }
+
+    /// <summary>
+    /// Читает идентификатор слота коллекции (<c>varuint</c>), который должен быть меньше
+    /// <see cref="ReplicationLimits.MaxCollectionCount"/>.
+    /// </summary>
+    /// <param name="reader">Читатель</param>
+    /// <exception cref="ReplicationFormatException">Идентификатор вне допустимого диапазона</exception>
+    public int ReadSlotId(ref BitReader reader)
+    {
+        ulong slot = reader.ReadVarUInt();
+        if (slot >= (ulong)Limits.MaxCollectionCount)
+        {
+            throw new ReplicationFormatException(
+                $"collection slot id {slot} exceeds ReplicationLimits.MaxCollectionCount ({Limits.MaxCollectionCount}).");
+        }
+
+        return (int)slot;
+    }
+
+    /// <summary>
+    /// Читает количество элементов коллекции (<c>varuint</c>), которое не должно превышать
+    /// <see cref="ReplicationLimits.MaxCollectionCount"/>.
+    /// </summary>
+    /// <param name="reader">Читатель</param>
+    /// <exception cref="ReplicationFormatException">Количество вне допустимого диапазона</exception>
+    public int ReadCollectionCount(ref BitReader reader)
+    {
+        ulong count = reader.ReadVarUInt();
+        if (count > (ulong)Limits.MaxCollectionCount)
+        {
+            throw new ReplicationFormatException(
+                $"collection count {count} exceeds ReplicationLimits.MaxCollectionCount ({Limits.MaxCollectionCount}).");
+        }
+
+        return (int)count;
     }
 
     /// <summary>
