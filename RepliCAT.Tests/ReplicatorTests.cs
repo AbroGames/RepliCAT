@@ -1192,14 +1192,13 @@ public class ReplicatorTests
         writer.Reset();
         Assert.False(replicator.TryWriteDelta(baseline, writer));
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            replicator.TryWriteDelta(baseline, writer);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 0; i < 1000; i++)
+            {
+                replicator.TryWriteDelta(baseline, writer);
+            }
+        });
     }
 
     [Fact]
@@ -1225,14 +1224,13 @@ public class ReplicatorTests
         Frame(1);
         Frame(2);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 3; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            Frame(i);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 3; i < 1000; i++)
+            {
+                Frame(i);
+            }
+        });
         Assert.Equal(999, client.Tolerant);
     }
 }

@@ -1753,14 +1753,13 @@ public class ReplicatedDictionaryTests
         writer.Reset();
         Assert.False(replicator.TryWriteDelta(baseline, writer));
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            replicator.TryWriteDelta(baseline, writer);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 0; i < 1000; i++)
+            {
+                replicator.TryWriteDelta(baseline, writer);
+            }
+        });
     }
 
     [Fact]
@@ -1807,14 +1806,13 @@ public class ReplicatedDictionaryTests
         Frame(1);
         Frame(2);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 3; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            Frame(i);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 3; i < 1000; i++)
+            {
+                Frame(i);
+            }
+        });
         AssertDictionaryEqual(itemMap.Items, client.Items, AssertItemEqual);
 
         // Словарь значений с int-ключами: запись и применение без аллокаций.
@@ -1838,14 +1836,13 @@ public class ReplicatedDictionaryTests
 
         ValueFrame(1);
         ValueFrame(2);
-        before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 3; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            ValueFrame(i);
-        }
-
-        allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 3; i < 1000; i++)
+            {
+                ValueFrame(i);
+            }
+        });
         AssertValuesEqual(valueServer.Values, intClient.Values);
     }
 }

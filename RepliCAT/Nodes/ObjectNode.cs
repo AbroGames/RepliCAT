@@ -287,9 +287,11 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
         {
             type = _context.TypeIds.GetType((int)id);
         }
-        catch (KeyNotFoundException e)
+        catch (Exception e) when (e is not OutOfMemoryException)
         {
-            throw new ReplicationFormatException($"unknown type id {id}.", e);
+            // Id пришел из данных, поэтому любое исключение отображения (KeyNotFoundException у
+            // реализаций на словаре, ArgumentOutOfRangeException у реализаций на списке и т. п.) — ошибка формата.
+            throw new ReplicationFormatException($"unknown type id {id}: {e.Message}", e);
         }
 
         if (type == null)
@@ -304,7 +306,17 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
                 $"type id {id} ({type.FullName}) is not a concrete type assignable to {typeof(T).FullName}.");
         }
 
-        return GetModel(type);
+        try
+        {
+            return GetModel(type);
+        }
+        catch (ReplicationException e) when (e is not ReplicationFormatException)
+        {
+            // Тип выбран данными: тип, для которого нельзя построить модель (например, ReplicatedList
+            // или тип с неподдерживаемыми членами), — ошибка формата, а не конфигурации получателя.
+            throw new ReplicationFormatException(
+                $"type id {id} ({type.FullName}) cannot be replicated: {e.Message}", e);
+        }
     }
 
     private ReplicationTypeModel GetModel(Type type)

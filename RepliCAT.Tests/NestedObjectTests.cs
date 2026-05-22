@@ -1048,15 +1048,14 @@ public class NestedObjectTests
         writer.Reset();
         Assert.False(replicator.TryWriteDelta(baseline, writer));
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            replicator.TryWriteDelta(baseline, writer);
-            replicator.TryWriteDelta(armoryBaseline, writer);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 0; i < 1000; i++)
+            {
+                replicator.TryWriteDelta(baseline, writer);
+                replicator.TryWriteDelta(armoryBaseline, writer);
+            }
+        });
     }
 
     [Fact]
@@ -1080,14 +1079,13 @@ public class NestedObjectTests
         Frame(1);
         Frame(2);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 3; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            Frame(i);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 3; i < 1000; i++)
+            {
+                Frame(i);
+            }
+        });
         Assert.Equal(999, client.Weapon.Ammo);
     }
 }

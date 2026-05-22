@@ -450,21 +450,20 @@ public class CodecTests
         negative.IsChanged(Negative.Minus, Negative.Plus);
         writer.Reset();
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         bool changed = false;
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            small.Write(writer, Small.C);
-            negative.Write(writer, Negative.Minus);
-            changed |= small.IsChanged(Small.A, Small.B);
-            changed |= negative.IsChanged(Negative.Minus, Negative.Plus);
-            writer.Reset();
-        }
-
-        long after = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                small.Write(writer, Small.C);
+                negative.Write(writer, Negative.Minus);
+                changed |= small.IsChanged(Small.A, Small.B);
+                changed |= negative.IsChanged(Negative.Minus, Negative.Plus);
+                writer.Reset();
+            }
+        });
 
         Assert.True(changed);
-        Assert.Equal(0, after - before);
     }
 
     // ---------- nullable ----------

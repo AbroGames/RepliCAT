@@ -1188,17 +1188,16 @@ public class ManualReplicationTests
         }
 
         writer.Reset();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            foreach (ReplicationBaseline baseline in baselines)
+            for (int i = 0; i < 1000; i++)
             {
-                Assert.False(replicator.TryWriteDelta(baseline, writer));
+                foreach (ReplicationBaseline baseline in baselines)
+                {
+                    Assert.False(replicator.TryWriteDelta(baseline, writer));
+                }
             }
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+        });
     }
 
     [Fact]
@@ -1233,14 +1232,13 @@ public class ManualReplicationTests
         Frame(1);
         Frame(2);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 3; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            Frame(i);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+            for (int i = 3; i < 1000; i++)
+            {
+                Frame(i);
+            }
+        });
         Assert.Equal(999, client.Manual);
         Assert.Equal(999, parentClient.Items[0].M);
     }

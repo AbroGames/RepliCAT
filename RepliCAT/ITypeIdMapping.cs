@@ -21,5 +21,9 @@ public interface ITypeIdMapping
     /// <param name="id">Идентификатор типа.</param>
     /// <returns>Тип с указанным идентификатором.</returns>
     /// <exception cref="KeyNotFoundException">Идентификатор не зарегистрирован в отображении.</exception>
+    /// <remarks>
+    /// Репликация передает сюда идентификаторы, прочитанные из сети, и считает ошибкой формата
+    /// (<c>ReplicationFormatException</c>) любое исключение этого метода и результат <c>null</c>.
+    /// </remarks>
     Type GetType(int id);
 }

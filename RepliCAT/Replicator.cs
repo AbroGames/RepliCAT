@@ -194,13 +194,18 @@ public sealed class Replicator
 
     /// <summary>
     /// Применяет данные дельты или снимка к существующему объекту.
-    /// Данные должны содержать ровно один объект: остаток в 8 бит и более считается ошибкой формата.
+    /// Данные должны содержать ровно один объект: остаток в 8 бит и более считается ошибкой формата.<br/>
+    /// Применение не атомарно: после исключения объект может остаться частично обновленным,
+    /// такого клиента нужно заново синхронизировать снимком.
     /// </summary>
     /// <param name="target">Объект того же типа, что и на отправителе</param>
     /// <param name="data">Данные</param>
     /// <exception cref="ArgumentNullException"><paramref name="target"/> равен <c>null</c></exception>
     /// <exception cref="ReplicationFormatException">Данные повреждены или не соответствуют схеме</exception>
-    /// <exception cref="ReplicationException">Тип объекта не поддерживается</exception>
+    /// <exception cref="ReplicationException">
+    /// Ошибка конфигурации: тип объекта не поддерживается, получателю нужен новый экземпляр для члена без сеттера
+    /// или у создаваемого типа нет конструктора без параметров
+    /// </exception>
     public void Apply(object target, ReadOnlySpan<byte> data)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -222,7 +227,10 @@ public sealed class Replicator
     /// <param name="reader">Читатель</param>
     /// <exception cref="ArgumentNullException"><paramref name="target"/> равен <c>null</c></exception>
     /// <exception cref="ReplicationFormatException">Данные повреждены или не соответствуют схеме</exception>
-    /// <exception cref="ReplicationException">Тип объекта не поддерживается</exception>
+    /// <exception cref="ReplicationException">
+    /// Ошибка конфигурации: тип объекта не поддерживается, получателю нужен новый экземпляр для члена без сеттера
+    /// или у создаваемого типа нет конструктора без параметров
+    /// </exception>
     public void Apply(object target, ref BitReader reader)
     {
         ArgumentNullException.ThrowIfNull(target);

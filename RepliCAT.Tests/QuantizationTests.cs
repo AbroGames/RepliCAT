@@ -678,17 +678,16 @@ public class QuantizationTests
         // Прогрев (JIT)
         Exercise();
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         bool changed = false;
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.DoesNotAllocate(() =>
         {
-            changed |= Exercise();
-        }
-
-        long after = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                changed |= Exercise();
+            }
+        });
 
         Assert.True(changed);
-        Assert.Equal(0, after - before);
 
         bool Exercise()
         {
