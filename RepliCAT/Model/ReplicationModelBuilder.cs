@@ -32,6 +32,9 @@ internal sealed class ReplicationModelBuilder
     private static readonly MethodInfo CreateDictionaryNodeMethod =
         typeof(ReplicationModelBuilder).GetMethod(nameof(CreateDictionaryNode), BindingFlags.NonPublic | BindingFlags.Instance);
 
+    private static readonly MethodInfo CreateSetNodeMethod =
+        typeof(ReplicationModelBuilder).GetMethod(nameof(CreateSetNode), BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly ReplicationContext _context;
     private readonly object _lock = new();
     private readonly Dictionary<Type, ReplicationTypeModel> _models = new();
@@ -167,6 +170,27 @@ internal sealed class ReplicationModelBuilder
             return (ReplicationNode)Invoke(CreateDictionaryNodeMethod.MakeGenericMethod(arguments), [options, path]);
         }
 
+        if (IsReplicatedSet(valueType))
+        {
+            // Элементы — ключи словаря под множеством: только типы с кодеком, без квантования и допуска.
+            Type itemType = valueType.GetGenericArguments()[0];
+            if (!_context.Codecs.CanEncode(itemType))
+            {
+                throw new ReplicationException(
+                    $"{path}: set item type {itemType.FullName} has no replication codec. " +
+                    "Items must be value types with a codec (primitives, strings, enums, Godot structs or " +
+                    "types registered via ReplicationCodecs.Register); object items are not supported.");
+            }
+
+            if (!options.IsDefault)
+            {
+                throw new ReplicationException(
+                    $"{path}: [Quantize] and Tolerance cannot be applied to a set: its items are compared exactly.");
+            }
+
+            return (ReplicationNode)Invoke(CreateSetNodeMethod.MakeGenericMethod(itemType), [path]);
+        }
+
         // Вложенный объект (класс, в том числе абстрактный, или интерфейс).
         if (!options.IsDefault)
         {
@@ -210,6 +234,13 @@ internal sealed class ReplicationModelBuilder
                 $"Type {type.FullName} cannot be replicated as an object: a ReplicatedDictionary can only be a member " +
                 "(or an item) declared with its exact type.");
         }
+
+        if (IsReplicatedSet(type))
+        {
+            throw new ReplicationException(
+                $"Type {type.FullName} cannot be replicated as an object: a ReplicatedSet can only be a member " +
+                "(or an item) declared with its exact type.");
+        }
     }
 
     private static bool IsReplicatedList(Type type)
@@ -220,6 +251,11 @@ internal sealed class ReplicationModelBuilder
     private static bool IsReplicatedDictionary(Type type)
     {
         return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ReplicatedDictionary<,>);
+    }
+
+    private static bool IsReplicatedSet(Type type)
+    {
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ReplicatedSet<>);
     }
 
     private MemberReplicator[] BuildMembers(Type type)
@@ -381,7 +417,7 @@ internal sealed class ReplicationModelBuilder
 
         if (definition == typeof(HashSet<>))
         {
-            return "HashSet<T> cannot be replicated, use ReplicatedDictionary<TKey, TValue> or ReplicatedList<T> instead.";
+            return "HashSet<T> cannot be replicated, use ReplicatedSet<T> instead.";
         }
 
         return null;
@@ -441,6 +477,13 @@ internal sealed class ReplicationModelBuilder
         ValueNode<TKey> keyNode = CreateValueNode<TKey>(ValueOptions.None, path + "{key}");
         var valueNode = (ReplicationNode<TValue>)CreateNode(typeof(TValue), options, path + "[]");
         return new DictionaryNode<TKey, TValue>(_context, keyNode, valueNode, path);
+    }
+
+    private SetNode<T> CreateSetNode<T>(string path)
+    {
+        // Элементы: кодек без квантования и допуска, как у ключей словаря.
+        ValueNode<T> itemNode = CreateValueNode<T>(ValueOptions.None, path + "[]");
+        return new SetNode<T>(_context, itemNode, path);
     }
 
     private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node,

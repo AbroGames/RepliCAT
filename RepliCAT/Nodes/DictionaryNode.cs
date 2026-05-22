@@ -18,7 +18,8 @@ namespace RepliCAT.Nodes;
 /// за O(1) без обращения к записям.<br/>
 /// Узел входит на уровень вложенности так же, как узлы объекта и списка.<br/>
 /// Политика повторов на чтении совпадает со списком: повтор ключа вне сброса допускается (применяется
-/// как дельта к тому же значению), повтор при сбросе — ошибка формата. Ключ <c>null</c> — ошибка формата.
+/// как дельта к тому же значению), повтор при сбросе — ошибка формата. Ключ <c>null</c> — ошибка формата.<br/>
+/// Узел также обслуживает <see cref="ReplicatedSet{T}"/> (через <see cref="SetNode{T}"/>).
 /// </summary>
 /// <typeparam name="TKey">Тип ключей</typeparam>
 /// <typeparam name="TValue">Тип значений</typeparam>
@@ -38,6 +39,7 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
     private readonly ReplicationNode<TValue> _valueNode;
     private readonly bool _valueHasInnerState;
     private readonly string _path;
+    private readonly string _kind;
 
     /// <summary>
     /// Создает узел словаря.
@@ -46,7 +48,9 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
     /// <param name="keyNode">Узел ключей (используются его кодек и описание для хэша схемы)</param>
     /// <param name="valueNode">Узел значений (один на член)</param>
     /// <param name="path">Путь к члену для сообщений</param>
-    public DictionaryNode(ReplicationContext context, ValueNode<TKey> keyNode, ReplicationNode<TValue> valueNode, string path)
+    /// <param name="kind">Название коллекции для сообщений об ошибках формата</param>
+    public DictionaryNode(ReplicationContext context, ValueNode<TKey> keyNode, ReplicationNode<TValue> valueNode, string path,
+        string kind = "dictionary")
     {
         _context = context;
         _keyCodec = keyNode.Codec;
@@ -54,6 +58,7 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
         _valueNode = valueNode;
         _valueHasInnerState = valueNode.HasInnerState;
         _path = path;
+        _kind = kind;
     }
 
     /// <summary>
@@ -317,14 +322,14 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
 
     /// <summary>
     /// Читает ключ кодеком ключа. Ключ <c>null</c> (например, у строкового кодека) — ошибка формата,
-    /// потому что словарь не может его содержать.
+    /// потому что словарь (и множество) не может его содержать.
     /// </summary>
     private TKey ReadKey(ref BitReader reader)
     {
         TKey key = _keyCodec.Read(ref reader);
         if (KeyCanBeNull && EqualityComparer<TKey>.Default.Equals(key, default))
         {
-            throw new ReplicationFormatException("a null dictionary key was received.");
+            throw new ReplicationFormatException($"a null {_kind} key was received.");
         }
 
         return key;
@@ -342,13 +347,13 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
                 // При сбросе каждый ключ записывается один раз, поэтому число записей ограничено лимитом.
                 if (dictionary.IsDuplicateInReset(key))
                 {
-                    throw new ReplicationFormatException($"duplicate dictionary key {key} in a reset.");
+                    throw new ReplicationFormatException($"duplicate {_kind} key {key} in a reset.");
                 }
 
                 if (upserts >= max)
                 {
                     throw new ReplicationFormatException(
-                        $"dictionary reset exceeds ReplicationLimits.MaxCollectionCount ({max}).");
+                        $"{_kind} reset exceeds ReplicationLimits.MaxCollectionCount ({max}).");
                 }
 
                 upserts++;
@@ -356,7 +361,7 @@ internal sealed class DictionaryNode<TKey, TValue> : ReplicationNode<ReplicatedD
             else if (dictionary.Count >= max && !dictionary.ContainsKey(key))
             {
                 throw new ReplicationFormatException(
-                    $"dictionary exceeds ReplicationLimits.MaxCollectionCount ({max}).");
+                    $"{_kind} exceeds ReplicationLimits.MaxCollectionCount ({max}).");
             }
 
             dictionary.TryGetValue(key, out TValue existing);
