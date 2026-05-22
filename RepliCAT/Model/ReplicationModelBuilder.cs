@@ -29,6 +29,9 @@ internal sealed class ReplicationModelBuilder
     private static readonly MethodInfo CreateListNodeMethod =
         typeof(ReplicationModelBuilder).GetMethod(nameof(CreateListNode), BindingFlags.NonPublic | BindingFlags.Instance);
 
+    private static readonly MethodInfo CreateDictionaryNodeMethod =
+        typeof(ReplicationModelBuilder).GetMethod(nameof(CreateDictionaryNode), BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly ReplicationContext _context;
     private readonly object _lock = new();
     private readonly Dictionary<Type, ReplicationTypeModel> _models = new();
@@ -106,7 +109,7 @@ internal sealed class ReplicationModelBuilder
 
     /// <summary>
     /// Создает узел для значения указанного типа. Используется для членов, элементов списков
-    /// и (шаг 8) значений словарей.
+    /// и значений словарей.
     /// </summary>
     /// <param name="valueType">Тип значения</param>
     /// <param name="options">Квантование и допуск</param>
@@ -149,7 +152,20 @@ internal sealed class ReplicationModelBuilder
                 CreateListNodeMethod.MakeGenericMethod(valueType.GetGenericArguments()[0]), [options, path]);
         }
 
-        // Шаг 8: ReplicatedDictionary — до объектной маршрутизации.
+        if (IsReplicatedDictionary(valueType))
+        {
+            // Ключи — только типы с кодеком. Quantize/Tolerance члена-словаря относятся к значениям, а не к ключам.
+            Type[] arguments = valueType.GetGenericArguments();
+            if (!_context.Codecs.CanEncode(arguments[0]))
+            {
+                throw new ReplicationException(
+                    $"{path}: dictionary key type {arguments[0].FullName} has no replication codec. " +
+                    "Keys must be value types with a codec (primitives, strings, enums, Godot structs or " +
+                    "types registered via ReplicationCodecs.Register); object keys are not supported.");
+            }
+
+            return (ReplicationNode)Invoke(CreateDictionaryNodeMethod.MakeGenericMethod(arguments), [options, path]);
+        }
 
         // Вложенный объект (класс, в том числе абстрактный, или интерфейс).
         if (!options.IsDefault)
@@ -187,11 +203,23 @@ internal sealed class ReplicationModelBuilder
                 $"Type {type.FullName} cannot be replicated as an object: a ReplicatedList can only be a member " +
                 "(or an item) declared with its exact type.");
         }
+
+        if (IsReplicatedDictionary(type))
+        {
+            throw new ReplicationException(
+                $"Type {type.FullName} cannot be replicated as an object: a ReplicatedDictionary can only be a member " +
+                "(or an item) declared with its exact type.");
+        }
     }
 
     private static bool IsReplicatedList(Type type)
     {
         return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ReplicatedList<>);
+    }
+
+    private static bool IsReplicatedDictionary(Type type)
+    {
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ReplicatedDictionary<,>);
     }
 
     private MemberReplicator[] BuildMembers(Type type)
@@ -404,6 +432,15 @@ internal sealed class ReplicationModelBuilder
         // а кэш модели ObjectNode общий для всех элементов.
         var itemNode = (ReplicationNode<TItem>)CreateNode(typeof(TItem), options, path + "[]");
         return new ListNode<TItem>(_context, itemNode, path);
+    }
+
+    private DictionaryNode<TKey, TValue> CreateDictionaryNode<TKey, TValue>(ValueOptions options, string path)
+    {
+        // Ключи: кодек без квантования и допуска. Значения: один узел (и один кодек) на член,
+        // Quantize/Tolerance члена применяются к значениям.
+        ValueNode<TKey> keyNode = CreateValueNode<TKey>(ValueOptions.None, path + "{key}");
+        var valueNode = (ReplicationNode<TValue>)CreateNode(typeof(TValue), options, path + "[]");
+        return new DictionaryNode<TKey, TValue>(_context, keyNode, valueNode, path);
     }
 
     private MemberReplicator CreateValueMember<TOwner, TValue>(MemberInfo member, string path, ReplicationNode node)
