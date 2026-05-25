@@ -53,8 +53,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="GodotSharp" Version="4.7.1" />
+        <!-- Минимальная версия, а не последняя: нужны только структуры Godot, которые есть с 4.0,
+        а более высокая версия заставила бы проекты на старом движке обновлять GodotSharp (NU1605) -->
+        <PackageReference Include="GodotSharp" Version="4.0.0" />
         <PackageReference Include="Serilog" Version="4.3.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="RepliCAT.Tests" />
     </ItemGroup>
 
     <ItemGroup>

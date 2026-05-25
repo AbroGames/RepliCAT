@@ -58,6 +58,12 @@ public sealed class EnumCodec<TEnum> : IReplicationCodec<TEnum> where TEnum : un
     /// </summary>
     public bool IsCompact => _compact;
 
+    /// <summary>
+    /// Максимальное определенное значение (сырые биты) при компактной записи: значения больше него
+    /// не пишутся и не читаются. При записи в полную ширину — 0 (ограничения нет).
+    /// </summary>
+    public ulong MaxDefinedValue => _maxDefined;
+
     /// <inheritdoc/>
     public void Write(BitWriter writer, TEnum value)
     {

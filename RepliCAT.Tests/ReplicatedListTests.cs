@@ -37,12 +37,12 @@ public class ReplicatedListTests
             return this;
         }
 
-        public int GetId(Type type)
+        public int GetIdByType(Type type)
         {
             return _ids[type];
         }
 
-        public Type GetType(int id)
+        public Type GetTypeById(int id)
         {
             return _types[id];
         }

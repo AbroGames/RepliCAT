@@ -35,12 +35,12 @@ public class NestedObjectTests
             return this;
         }
 
-        public int GetId(Type type)
+        public int GetIdByType(Type type)
         {
             return _ids[type];
         }
 
-        public Type GetType(int id)
+        public Type GetTypeById(int id)
         {
             return _types[id];
         }
@@ -436,6 +436,40 @@ public class NestedObjectTests
         Assert.IsNotType<ReplicationFormatException>(e);
         Assert.Contains(typeof(ConstructorHolder).FullName + ".NoDefault", e.Message);
         Assert.Contains("parameterless", e.Message);
+    }
+
+    public class ThrowingConstructor
+    {
+        private ThrowingConstructor()
+        {
+            throw new InvalidOperationException("constructor failed");
+        }
+
+        public ThrowingConstructor(int value)
+        {
+            Value = value;
+        }
+
+        [Replicated] public int Value;
+    }
+
+    public class ThrowingConstructorHolder
+    {
+        [Replicated] public ThrowingConstructor Item;
+    }
+
+    [Fact]
+    public void InstanceCreation_ConstructorException_IsNotWrappedInTargetInvocation()
+    {
+        Replicator replicator = CreateReplicator();
+        var server = new ThrowingConstructorHolder { Item = new ThrowingConstructor(3) };
+        byte[] data = Delta(replicator, replicator.CreateBaseline(server));
+
+        var e = Assert.Throws<ReplicationException>(() => replicator.Apply(new ThrowingConstructorHolder(), data));
+        Assert.IsNotType<ReplicationFormatException>(e);
+        Assert.Contains(typeof(ThrowingConstructorHolder).FullName + ".Item", e.Message);
+        Assert.Contains("constructor failed", e.Message);
+        Assert.IsType<InvalidOperationException>(e.InnerException);
     }
 
     // ---------- polymorphism: abstract and interface declared types ----------
@@ -906,6 +940,135 @@ public class NestedObjectTests
 
         Assert.Throws<ReplicationException>(() => replicator.CreateBaseline(new HasBadNested()));
         Assert.Throws<ReplicationException>(() => replicator.GetSchemaHash(typeof(BadNested)));
+    }
+
+    // ---------- object members whose type has no replicated members ----------
+
+    public class NoReplicatedMembers
+    {
+        public int NotReplicated;
+    }
+
+    public static class ObjectMemberErrors
+    {
+        public class PlainObject
+        {
+            [Replicated] public object Value;
+        }
+
+        public class NoMembers
+        {
+            [Replicated] public NoReplicatedMembers Value;
+        }
+
+        public class EngineNode
+        {
+            [Replicated] public Godot.Node Value;
+        }
+
+        public class ListInterface
+        {
+            [Replicated] public IList<int> Value;
+        }
+
+        public class ReadOnlyListInterface
+        {
+            [Replicated] public IReadOnlyList<Stats> Value;
+        }
+
+        public class Queue
+        {
+            [Replicated] public Queue<int> Value;
+        }
+
+        public class SortedDictionary
+        {
+            [Replicated] public SortedDictionary<int, int> Value;
+        }
+
+        public class ListOfObjects
+        {
+            [Replicated] public ReplicatedList<object> Value = new();
+        }
+
+        public class DictionaryOfNodes
+        {
+            [Replicated] public ReplicatedDictionary<int, Godot.Node> Value = new();
+        }
+    }
+
+    [Theory]
+    [InlineData(typeof(ObjectMemberErrors.PlainObject), "NetId")]
+    [InlineData(typeof(ObjectMemberErrors.NoMembers), "NetId")]
+    [InlineData(typeof(ObjectMemberErrors.EngineNode), "NetId")]
+    [InlineData(typeof(ObjectMemberErrors.ListInterface), "ReplicatedList<T>")]
+    [InlineData(typeof(ObjectMemberErrors.ReadOnlyListInterface), "ReplicatedList<T>")]
+    [InlineData(typeof(ObjectMemberErrors.Queue), "ReplicatedList<T>")]
+    [InlineData(typeof(ObjectMemberErrors.SortedDictionary), "ReplicatedDictionary<TKey, TValue>")]
+    [InlineData(typeof(ObjectMemberErrors.ListOfObjects), "NetId")]
+    [InlineData(typeof(ObjectMemberErrors.DictionaryOfNodes), "NetId")]
+    public void ObjectMember_WithoutReplicatedMembers_IsRejected(Type type, string hint)
+    {
+        Replicator replicator = CreateReplicator();
+        var e = Assert.Throws<ReplicationException>(() => replicator.GetSchemaHash(type));
+        Assert.IsNotType<ReplicationFormatException>(e);
+        Assert.Contains(type.FullName + ".Value", e.Message);
+        Assert.Contains(hint, e.Message);
+    }
+
+    public abstract class Marker
+    {
+    }
+
+    public class DashMarker : Marker
+    {
+    }
+
+    public class MarkerHolder
+    {
+        [Replicated] public Marker Marker;
+    }
+
+    public class ItemBag : IEnumerable<int>
+    {
+        [Replicated] public ReplicatedList<int> Items = new();
+
+        public IEnumerator<int> GetEnumerator()
+        {
+            return Items.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    public class ItemBagHolder
+    {
+        [Replicated] public ItemBag Bag;
+    }
+
+    [Fact]
+    public void ObjectMember_AbstractBaseAndEnumerableWithMembers_AreAllowed()
+    {
+        // Абстрактная база без членов: данные несет подтип, в том числе подтип без членов (сам факт типа)
+        Replicator replicator = CreateReplicator(new FakeTypeIds().Add(typeof(DashMarker), 1));
+        var server = new MarkerHolder { Marker = new DashMarker() };
+        ReplicationBaseline baseline = replicator.CreateBaseline(server);
+        var client = new MarkerHolder();
+        replicator.Apply(client, Delta(replicator, baseline));
+        Assert.IsType<DashMarker>(client.Marker);
+
+        server.Marker = null;
+        replicator.Apply(client, Delta(replicator, baseline));
+        Assert.Null(client.Marker);
+
+        // Класс-коллекция с реплицируемыми членами — обычный вложенный объект
+        var bagServer = new ItemBagHolder { Bag = new ItemBag { Items = { 1, 2 } } };
+        var bagClient = new ItemBagHolder();
+        replicator.Apply(bagClient, Delta(replicator, replicator.CreateBaseline(bagServer)));
+        Assert.Equal([1, 2], bagClient.Bag);
     }
 
     // ---------- schema hash ----------

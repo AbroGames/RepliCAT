@@ -13,7 +13,7 @@ public interface ITypeIdMapping
     /// <param name="type">Тип, для которого нужен идентификатор.</param>
     /// <returns>Идентификатор типа.</returns>
     /// <exception cref="KeyNotFoundException">Тип не зарегистрирован в отображении.</exception>
-    int GetId(Type type);
+    int GetIdByType(Type type);
 
     /// <summary>
     /// Возвращает тип по его идентификатору.
@@ -25,5 +25,5 @@ public interface ITypeIdMapping
     /// Репликация передает сюда идентификаторы, прочитанные из сети, и считает ошибкой формата
     /// (<c>ReplicationFormatException</c>) любое исключение этого метода и результат <c>null</c>.
     /// </remarks>
-    Type GetType(int id);
+    Type GetTypeById(int id);
 }

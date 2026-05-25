@@ -350,7 +350,7 @@ public sealed class ReplicatedSet<T> : ISet<T>, IReadOnlySet<T>
     /// </summary>
     public Enumerator GetEnumerator()
     {
-        return new Enumerator(_dictionary.Keys.GetEnumerator());
+        return new Enumerator(_dictionary.Inner.Keys.GetEnumerator());
     }
 
     /// <inheritdoc/>

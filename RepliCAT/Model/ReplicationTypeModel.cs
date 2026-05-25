@@ -365,6 +365,7 @@ internal sealed class ReplicationTypeModel
     /// <summary>
     /// Создает экземпляр типа модели через конструктор без параметров (допускается непубличный).
     /// Используется получателем, когда существующий экземпляр нельзя переиспользовать.
+    /// Исключение конструктора пробрасывается как есть, без обертки в <see cref="TargetInvocationException"/>.
     /// </summary>
     /// <exception cref="ReplicationException">У типа нет конструктора без параметров</exception>
     public object CreateInstance()
@@ -373,7 +374,7 @@ internal sealed class ReplicationTypeModel
         {
             return Activator.CreateInstance(
                 Type,
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DoNotWrapExceptions,
                 binder: null,
                 args: null,
                 culture: null);

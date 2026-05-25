@@ -3,6 +3,7 @@ using Godot;
 using RepliCAT;
 using RepliCAT.Bits;
 using RepliCAT.Codecs;
+using RepliCAT.Model;
 
 namespace RepliCAT.Tests;
 
@@ -425,6 +426,27 @@ public class CodecTests
         AssertRoundTrip(Negative.Minus, 16);
         AssertRoundTrip(Negative.Plus, 16);
         AssertRoundTrip((Negative)short.MinValue, 16);
+    }
+
+    [Fact]
+    public void Enum_MaxDefinedValue_IsPartOfSchema()
+    {
+        Assert.Equal(3UL, ((EnumCodec<Small>)Get<Small>()).MaxDefinedValue);
+        Assert.Equal(200UL, ((EnumCodec<Sparse>)Get<Sparse>()).MaxDefinedValue);
+        Assert.Equal(0UL, ((EnumCodec<Options>)Get<Options>()).MaxDefinedValue);
+
+        // Новое значение в пределах той же ширины меняет допустимый диапазон, а с ним и хэш схемы
+        Assert.EndsWith("(bits=2,compact=1,max=3)", DescribeCodec(Get<Small>()));
+        Assert.EndsWith("(bits=8,compact=1,max=200)", DescribeCodec(Get<Sparse>()));
+        Assert.EndsWith("(bits=16,compact=0)", DescribeCodec(Get<Options>()));
+        Assert.EndsWith("(bits=16,compact=0)", DescribeCodec(Get<Negative>()));
+    }
+
+    private static string DescribeCodec(object codec)
+    {
+        var sb = new StringBuilder();
+        SchemaHash.AppendCodec(sb, codec);
+        return sb.ToString();
     }
 
     [Fact]

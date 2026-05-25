@@ -7,7 +7,7 @@ namespace RepliCAT.Model;
 /// <summary>
 /// Общий контекст одного <see cref="Replicator"/>: ограничения, отображение типов, реестр кодеков,
 /// построитель моделей, логгер и счетчик глубины. Передается узлам через конструктор.
-/// Не потокобезопасен (как и <see cref="Replicator"/>), кроме построителя моделей.
+/// Не потокобезопасен (как и <see cref="Replicator"/>).
 /// </summary>
 internal sealed class ReplicationContext
 {

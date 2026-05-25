@@ -15,7 +15,7 @@ namespace RepliCAT.Reflection;
 /// (допустимы любые преобразования, поддерживаемые <see cref="Expression.Convert(Expression, Type)"/>).
 /// Для статических членов аргумент-владелец игнорируется.
 /// </remarks>
-public static class TypedAccessors
+internal static class TypedAccessors
 {
     /// <summary>
     /// Создает делегат, читающий значение поля или свойства.

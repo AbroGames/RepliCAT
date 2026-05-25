@@ -28,7 +28,7 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
     private readonly bool _isSealed;
     private readonly bool _canBeDeclared;
 
-    // Кэш модели последнего встреченного производного типа, чтобы не брать блокировку построителя каждый кадр.
+    // Кэш модели последнего встреченного производного типа, чтобы не искать ее в кэше построителя каждый кадр.
     private ReplicationTypeModel _lastModel;
 
     /// <summary>
@@ -237,7 +237,7 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
         int id;
         try
         {
-            id = _context.TypeIds.GetId(runtimeType);
+            id = _context.TypeIds.GetIdByType(runtimeType);
         }
         catch (KeyNotFoundException e)
         {
@@ -285,7 +285,7 @@ internal sealed class ObjectNode<T> : ReplicationNode<T> where T : class
         Type type;
         try
         {
-            type = _context.TypeIds.GetType((int)id);
+            type = _context.TypeIds.GetTypeById((int)id);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {

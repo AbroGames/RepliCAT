@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Reflection;
 using System.Text;
 using RepliCAT.Reflection;
@@ -7,7 +8,8 @@ using RepliCAT.Nodes;
 namespace RepliCAT.Model;
 
 /// <summary>
-/// Построитель и кэш моделей типов. Потокобезопасен: построение и поиск идут под блокировкой.
+/// Построитель и кэш моделей типов. Не потокобезопасен, как и <see cref="Replicator"/>, которому он принадлежит:
+/// поиск готовой модели на каждый <c>Apply</c> идет без блокировки.
 /// Модель кладется в кэш до построения членов, поэтому рекурсивные типы строятся корректно.
 /// Если построение завершилось ошибкой, из кэша удаляются все модели, созданные в рамках
 /// внешнего вызова <see cref="GetModel"/>, чтобы в кэше не осталось ссылок на недостроенные модели.
@@ -36,7 +38,6 @@ internal sealed class ReplicationModelBuilder
         typeof(ReplicationModelBuilder).GetMethod(nameof(CreateSetNode), BindingFlags.NonPublic | BindingFlags.Instance);
 
     private readonly ReplicationContext _context;
-    private readonly object _lock = new();
     private readonly Dictionary<Type, ReplicationTypeModel> _models = new();
     private readonly List<ReplicationTypeModel> _pending = new();
     private int _buildDepth;
@@ -54,49 +55,46 @@ internal sealed class ReplicationModelBuilder
     /// <exception cref="ReplicationException">Тип или его члены не поддерживаются</exception>
     public ReplicationTypeModel GetModel(Type type)
     {
-        lock (_lock)
+        if (_models.TryGetValue(type, out ReplicationTypeModel model))
         {
-            if (_models.TryGetValue(type, out ReplicationTypeModel model))
-            {
-                return model;
-            }
+            return model;
+        }
 
-            ValidateModelType(type);
+        ValidateModelType(type);
 
-            model = new ReplicationTypeModel(type);
-            _models.Add(type, model);
-            _pending.Add(model);
-            _buildDepth++;
-            try
+        model = new ReplicationTypeModel(type);
+        _models.Add(type, model);
+        _pending.Add(model);
+        _buildDepth++;
+        try
+        {
+            model.SetMembers(BuildMembers(type));
+        }
+        catch
+        {
+            if (_buildDepth == 1)
             {
-                model.SetMembers(BuildMembers(type));
-            }
-            catch
-            {
-                if (_buildDepth == 1)
+                foreach (ReplicationTypeModel pending in _pending)
                 {
-                    foreach (ReplicationTypeModel pending in _pending)
-                    {
-                        _models.Remove(pending.Type);
-                    }
-
-                    _pending.Clear();
+                    _models.Remove(pending.Type);
                 }
 
-                throw;
-            }
-            finally
-            {
-                _buildDepth--;
-            }
-
-            if (_buildDepth == 0)
-            {
                 _pending.Clear();
             }
 
-            return model;
+            throw;
         }
+        finally
+        {
+            _buildDepth--;
+        }
+
+        if (_buildDepth == 0)
+        {
+            _pending.Clear();
+        }
+
+        return model;
     }
 
     /// <summary>
@@ -104,10 +102,7 @@ internal sealed class ReplicationModelBuilder
     /// </summary>
     public ulong GetSchemaHash(Type type)
     {
-        lock (_lock)
-        {
-            return GetModel(type).GetSchemaHash();
-        }
+        return GetModel(type).GetSchemaHash();
     }
 
     /// <summary>
@@ -198,7 +193,69 @@ internal sealed class ReplicationModelBuilder
                 $"{path}: [Quantize] and Tolerance cannot be applied to an object member of type {valueType.FullName}.");
         }
 
+        string objectError = GetObjectTypeError(valueType);
+        if (objectError != null)
+        {
+            throw new ReplicationException($"{path}: {objectError}");
+        }
+
         return (ReplicationNode)Invoke(CreateObjectNodeMethod.MakeGenericMethod(valueType), [path]);
+    }
+
+    /// <summary>
+    /// Проверяет объявленный тип члена-объекта (элемента, значения словаря). Тип, иерархия которого не содержит
+    /// ни одного <see cref="ReplicatedAttribute"/>-члена, почти всегда ошибка: коллекция вместо реплицируемой,
+    /// ссылка на сущность (например, <c>Godot.Node</c>) вместо NetId, <c>object</c>. Такой член передавал бы только
+    /// "есть/нет", а получатель создавал бы пустые экземпляры.<br/>
+    /// Абстрактные классы и интерфейсы без членов допускаются: это базы полиморфных членов, данные несут подтипы.
+    /// Коллекции (<see cref="IEnumerable"/>) без членов отвергаются, в том числе интерфейсы коллекций.
+    /// Runtime-типы (подтипы) не проверяются: подтип без членов передает сам факт своего типа.
+    /// </summary>
+    /// <returns>Описание ошибки или <c>null</c>, если тип допустим</returns>
+    private static string GetObjectTypeError(Type type)
+    {
+        if (typeof(IEnumerable).IsAssignableFrom(type) && (type.IsInterface || !HasReplicatedMembers(type)))
+        {
+            return $"collection type {SchemaHash.FormatTypeName(type)} cannot be replicated as an object, " +
+                   "use ReplicatedList<T>, ReplicatedDictionary<TKey, TValue> or ReplicatedSet<T> instead.";
+        }
+
+        if (type.IsInterface || type.IsAbstract || HasReplicatedMembers(type))
+        {
+            return null;
+        }
+
+        return $"type {SchemaHash.FormatTypeName(type)} has no [Replicated] members, so only null/non-null would be " +
+               "replicated and the receiver would create empty instances. Reference network entities (such as Godot " +
+               "nodes) by a NetId (int/long), add [Replicated] members to the type, or make it abstract if it is " +
+               "only a base of polymorphic types.";
+    }
+
+    /// <summary>
+    /// Проверяет, есть ли в типе или его базовых типах члены с <see cref="ReplicatedAttribute"/>.
+    /// </summary>
+    private static bool HasReplicatedMembers(Type type)
+    {
+        for (Type level = type; level != null && level != typeof(object); level = level.BaseType)
+        {
+            foreach (FieldInfo field in level.GetFields(LevelFlags))
+            {
+                if (field.IsDefined(typeof(ReplicatedAttribute), false))
+                {
+                    return true;
+                }
+            }
+
+            foreach (PropertyInfo property in level.GetProperties(LevelFlags))
+            {
+                if (property.IsDefined(typeof(ReplicatedAttribute), false))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -17,6 +17,8 @@ public sealed class ReplicatedDictionary<TKey, TValue> : IDictionary<TKey, TValu
 {
     private readonly Dictionary<TKey, TValue> _dictionary;
     private int _version;
+    private KeyCollection _keys;
+    private ValueCollection _values;
 
     // Служебное состояние получателя при сбросе, создается лениво.
     private HashSet<TKey> _resetPending;
@@ -60,24 +62,24 @@ public sealed class ReplicatedDictionary<TKey, TValue> : IDictionary<TKey, TValu
     /// <summary>
     /// Ключи словаря (представление, изменяется вместе со словарем).
     /// </summary>
-    public Dictionary<TKey, TValue>.KeyCollection Keys => _dictionary.Keys;
+    public KeyCollection Keys => _keys ??= new KeyCollection(_dictionary);
 
     /// <summary>
     /// Значения словаря (представление, изменяется вместе со словарем).
     /// </summary>
-    public Dictionary<TKey, TValue>.ValueCollection Values => _dictionary.Values;
+    public ValueCollection Values => _values ??= new ValueCollection(_dictionary);
 
     /// <inheritdoc/>
-    ICollection<TKey> IDictionary<TKey, TValue>.Keys => _dictionary.Keys;
+    ICollection<TKey> IDictionary<TKey, TValue>.Keys => Keys;
 
     /// <inheritdoc/>
-    ICollection<TValue> IDictionary<TKey, TValue>.Values => _dictionary.Values;
+    ICollection<TValue> IDictionary<TKey, TValue>.Values => Values;
 
     /// <inheritdoc/>
-    IEnumerable<TKey> IReadOnlyDictionary<TKey, TValue>.Keys => _dictionary.Keys;
+    IEnumerable<TKey> IReadOnlyDictionary<TKey, TValue>.Keys => Keys;
 
     /// <inheritdoc/>
-    IEnumerable<TValue> IReadOnlyDictionary<TKey, TValue>.Values => _dictionary.Values;
+    IEnumerable<TValue> IReadOnlyDictionary<TKey, TValue>.Values => Values;
 
     /// <inheritdoc/>
     bool ICollection<KeyValuePair<TKey, TValue>>.IsReadOnly => false;
@@ -213,21 +215,21 @@ public sealed class ReplicatedDictionary<TKey, TValue> : IDictionary<TKey, TValu
     /// Возвращает перечислитель записей (структуру). Изменение словаря во время перечисления приводит
     /// к <see cref="InvalidOperationException"/> так же, как у <see cref="Dictionary{TKey, TValue}"/>.
     /// </summary>
-    public Dictionary<TKey, TValue>.Enumerator GetEnumerator()
+    public Enumerator GetEnumerator()
     {
-        return _dictionary.GetEnumerator();
+        return new Enumerator(_dictionary.GetEnumerator());
     }
 
     /// <inheritdoc/>
     IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator()
     {
-        return _dictionary.GetEnumerator();
+        return GetEnumerator();
     }
 
     /// <inheritdoc/>
     IEnumerator IEnumerable.GetEnumerator()
     {
-        return _dictionary.GetEnumerator();
+        return GetEnumerator();
     }
 
     /// <inheritdoc/>
@@ -258,6 +260,315 @@ public sealed class ReplicatedDictionary<TKey, TValue> : IDictionary<TKey, TValu
     void ICollection<KeyValuePair<TKey, TValue>>.CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
     {
         ((ICollection<KeyValuePair<TKey, TValue>>)_dictionary).CopyTo(array, arrayIndex);
+    }
+
+    /// <summary>
+    /// Вызывает явную реализацию <see cref="IEnumerator.Reset"/> у самого поля: приведение к интерфейсу
+    /// упаковало бы копию структуры, и сброс бы до поля не дошел.
+    /// </summary>
+    private static void ResetInPlace<TEnumerator>(ref TEnumerator enumerator) where TEnumerator : IEnumerator
+    {
+        enumerator.Reset();
+    }
+
+    /// <summary>
+    /// Перечислитель записей <see cref="ReplicatedDictionary{TKey, TValue}"/>.
+    /// </summary>
+    public struct Enumerator : IEnumerator<KeyValuePair<TKey, TValue>>
+    {
+        private Dictionary<TKey, TValue>.Enumerator _inner;
+
+        internal Enumerator(Dictionary<TKey, TValue>.Enumerator inner)
+        {
+            _inner = inner;
+        }
+
+        /// <summary>
+        /// Текущая запись.
+        /// </summary>
+        public KeyValuePair<TKey, TValue> Current => _inner.Current;
+
+        /// <inheritdoc/>
+        object IEnumerator.Current => _inner.Current;
+
+        /// <summary>
+        /// Переходит к следующей записи.
+        /// </summary>
+        /// <returns><c>false</c>, если записи закончились</returns>
+        /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+        public bool MoveNext()
+        {
+            return _inner.MoveNext();
+        }
+
+        /// <summary>
+        /// Возвращает перечислитель в начало.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+        public void Reset()
+        {
+            ResetInPlace(ref _inner);
+        }
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            _inner.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Ключи <see cref="ReplicatedDictionary{TKey, TValue}"/>: представление только для чтения,
+    /// изменяется вместе со словарем.
+    /// </summary>
+    public sealed class KeyCollection : ICollection<TKey>, IReadOnlyCollection<TKey>
+    {
+        private readonly Dictionary<TKey, TValue> _dictionary;
+
+        internal KeyCollection(Dictionary<TKey, TValue> dictionary)
+        {
+            _dictionary = dictionary;
+        }
+
+        /// <summary>
+        /// Количество ключей.
+        /// </summary>
+        public int Count => _dictionary.Count;
+
+        /// <inheritdoc/>
+        bool ICollection<TKey>.IsReadOnly => true;
+
+        /// <summary>
+        /// Проверяет, есть ли ключ в словаре.
+        /// </summary>
+        /// <param name="key">Ключ</param>
+        /// <exception cref="ArgumentNullException"><paramref name="key"/> равен <c>null</c></exception>
+        public bool Contains(TKey key)
+        {
+            return _dictionary.ContainsKey(key);
+        }
+
+        /// <summary>
+        /// Копирует ключи в массив.
+        /// </summary>
+        /// <param name="array">Массив назначения</param>
+        /// <param name="arrayIndex">Индекс в массиве, с которого начинается копирование</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> равен <c>null</c></exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> вне массива</exception>
+        /// <exception cref="ArgumentException">Ключи не помещаются в массив</exception>
+        public void CopyTo(TKey[] array, int arrayIndex)
+        {
+            _dictionary.Keys.CopyTo(array, arrayIndex);
+        }
+
+        /// <summary>
+        /// Возвращает перечислитель ключей (структуру).
+        /// </summary>
+        public Enumerator GetEnumerator()
+        {
+            return new Enumerator(_dictionary.Keys.GetEnumerator());
+        }
+
+        /// <inheritdoc/>
+        IEnumerator<TKey> IEnumerable<TKey>.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        /// <inheritdoc/>
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        /// <inheritdoc/>
+        void ICollection<TKey>.Add(TKey item)
+        {
+            throw new NotSupportedException("The key collection of a dictionary is read-only.");
+        }
+
+        /// <inheritdoc/>
+        bool ICollection<TKey>.Remove(TKey item)
+        {
+            throw new NotSupportedException("The key collection of a dictionary is read-only.");
+        }
+
+        /// <inheritdoc/>
+        void ICollection<TKey>.Clear()
+        {
+            throw new NotSupportedException("The key collection of a dictionary is read-only.");
+        }
+
+        /// <summary>
+        /// Перечислитель ключей.
+        /// </summary>
+        public struct Enumerator : IEnumerator<TKey>
+        {
+            private Dictionary<TKey, TValue>.KeyCollection.Enumerator _inner;
+
+            internal Enumerator(Dictionary<TKey, TValue>.KeyCollection.Enumerator inner)
+            {
+                _inner = inner;
+            }
+
+            /// <summary>
+            /// Текущий ключ.
+            /// </summary>
+            public TKey Current => _inner.Current;
+
+            /// <inheritdoc/>
+            object IEnumerator.Current => _inner.Current;
+
+            /// <summary>
+            /// Переходит к следующему ключу.
+            /// </summary>
+            /// <returns><c>false</c>, если ключи закончились</returns>
+            /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+            public bool MoveNext()
+            {
+                return _inner.MoveNext();
+            }
+
+            /// <summary>
+            /// Возвращает перечислитель в начало.
+            /// </summary>
+            /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+            public void Reset()
+            {
+                ResetInPlace(ref _inner);
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                _inner.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Значения <see cref="ReplicatedDictionary{TKey, TValue}"/>: представление только для чтения,
+    /// изменяется вместе со словарем.
+    /// </summary>
+    public sealed class ValueCollection : ICollection<TValue>, IReadOnlyCollection<TValue>
+    {
+        private readonly Dictionary<TKey, TValue> _dictionary;
+
+        internal ValueCollection(Dictionary<TKey, TValue> dictionary)
+        {
+            _dictionary = dictionary;
+        }
+
+        /// <summary>
+        /// Количество значений.
+        /// </summary>
+        public int Count => _dictionary.Count;
+
+        /// <inheritdoc/>
+        bool ICollection<TValue>.IsReadOnly => true;
+
+        /// <summary>
+        /// Копирует значения в массив.
+        /// </summary>
+        /// <param name="array">Массив назначения</param>
+        /// <param name="arrayIndex">Индекс в массиве, с которого начинается копирование</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> равен <c>null</c></exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> вне массива</exception>
+        /// <exception cref="ArgumentException">Значения не помещаются в массив</exception>
+        public void CopyTo(TValue[] array, int arrayIndex)
+        {
+            _dictionary.Values.CopyTo(array, arrayIndex);
+        }
+
+        /// <summary>
+        /// Возвращает перечислитель значений (структуру).
+        /// </summary>
+        public Enumerator GetEnumerator()
+        {
+            return new Enumerator(_dictionary.Values.GetEnumerator());
+        }
+
+        /// <inheritdoc/>
+        IEnumerator<TValue> IEnumerable<TValue>.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        /// <inheritdoc/>
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        /// <inheritdoc/>
+        bool ICollection<TValue>.Contains(TValue item)
+        {
+            return _dictionary.ContainsValue(item);
+        }
+
+        /// <inheritdoc/>
+        void ICollection<TValue>.Add(TValue item)
+        {
+            throw new NotSupportedException("The value collection of a dictionary is read-only.");
+        }
+
+        /// <inheritdoc/>
+        bool ICollection<TValue>.Remove(TValue item)
+        {
+            throw new NotSupportedException("The value collection of a dictionary is read-only.");
+        }
+
+        /// <inheritdoc/>
+        void ICollection<TValue>.Clear()
+        {
+            throw new NotSupportedException("The value collection of a dictionary is read-only.");
+        }
+
+        /// <summary>
+        /// Перечислитель значений.
+        /// </summary>
+        public struct Enumerator : IEnumerator<TValue>
+        {
+            private Dictionary<TKey, TValue>.ValueCollection.Enumerator _inner;
+
+            internal Enumerator(Dictionary<TKey, TValue>.ValueCollection.Enumerator inner)
+            {
+                _inner = inner;
+            }
+
+            /// <summary>
+            /// Текущее значение.
+            /// </summary>
+            public TValue Current => _inner.Current;
+
+            /// <inheritdoc/>
+            object IEnumerator.Current => _inner.Current;
+
+            /// <summary>
+            /// Переходит к следующему значению.
+            /// </summary>
+            /// <returns><c>false</c>, если значения закончились</returns>
+            /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+            public bool MoveNext()
+            {
+                return _inner.MoveNext();
+            }
+
+            /// <summary>
+            /// Возвращает перечислитель в начало.
+            /// </summary>
+            /// <exception cref="InvalidOperationException">Словарь изменен во время перечисления</exception>
+            public void Reset()
+            {
+                ResetInPlace(ref _inner);
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                _inner.Dispose();
+            }
+        }
     }
 
     // ---------- внутренний API для DictionaryNode ----------

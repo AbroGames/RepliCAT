@@ -108,7 +108,7 @@ public sealed class ComplexTypeIds : ITypeIdMapping
         typeof(Zone)
     ];
 
-    public int GetId(Type type)
+    public int GetIdByType(Type type)
     {
         int index = Array.IndexOf(_types, type);
         if (index <= 0)
@@ -119,7 +119,7 @@ public sealed class ComplexTypeIds : ITypeIdMapping
         return index;
     }
 
-    public Type GetType(int id)
+    public Type GetTypeById(int id)
     {
         // Индексация массива: неизвестный id — IndexOutOfRangeException, id 0 — null.
         if (id >= _types.Length)

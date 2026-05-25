@@ -37,12 +37,12 @@ public class ReplicatedDictionaryTests
             return this;
         }
 
-        public int GetId(Type type)
+        public int GetIdByType(Type type)
         {
             return _ids[type];
         }
 
-        public Type GetType(int id)
+        public Type GetTypeById(int id)
         {
             return _types[id];
         }
@@ -494,6 +494,103 @@ public class ReplicatedDictionaryTests
                 dictionary.Add(pair.Key + 10, 0);
             }
         });
+    }
+
+    [Fact]
+    public void KeysValuesAndEnumerators_AreLiveReadOnlyViews()
+    {
+        var dictionary = new ReplicatedDictionary<int, int> { [1] = 10, [2] = 20, [3] = 30 };
+
+        ReplicatedDictionary<int, int>.KeyCollection keys = dictionary.Keys;
+        ReplicatedDictionary<int, int>.ValueCollection values = dictionary.Values;
+        Assert.Same(keys, dictionary.Keys);
+        Assert.Same(values, dictionary.Values);
+        Assert.Same(keys, ((IDictionary<int, int>)dictionary).Keys);
+        Assert.Same(values, ((IReadOnlyDictionary<int, int>)dictionary).Values);
+        Assert.Equal(3, keys.Count);
+        Assert.Equal(3, values.Count);
+        // Contains ключей — поиск по хэшу, значений — линейный; оба проверяются напрямую, а не через Assert.Contains
+        bool[] found = [keys.Contains(2), keys.Contains(4), ((ICollection<int>)values).Contains(20), ((ICollection<int>)values).Contains(40)];
+        Assert.Equal([true, false, true, false], found);
+
+        var keyArray = new int[4];
+        keys.CopyTo(keyArray, 1);
+        Assert.Equal([1, 2, 3], keyArray.Skip(1).Order());
+        var valueArray = new int[3];
+        values.CopyTo(valueArray, 0);
+        Assert.Equal([10, 20, 30], valueArray.Order());
+
+        // Представления изменяются вместе со словарем, но сами только для чтения
+        dictionary.Add(4, 40);
+        Assert.Equal([1, 2, 3, 4], keys.Order());
+        Assert.Equal([10, 20, 30, 40], values.Order());
+        Assert.True(((ICollection<int>)keys).IsReadOnly);
+        Assert.True(((ICollection<int>)values).IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => ((ICollection<int>)keys).Add(5));
+        Assert.Throws<NotSupportedException>(() => ((ICollection<int>)keys).Remove(1));
+        Assert.Throws<NotSupportedException>(() => ((ICollection<int>)values).Clear());
+        Assert.Equal(4, dictionary.Count);
+
+        // Reset возвращает перечислители в начало
+        ReplicatedDictionary<int, int>.Enumerator entries = dictionary.GetEnumerator();
+        Assert.True(entries.MoveNext());
+        KeyValuePair<int, int> firstEntry = entries.Current;
+        Assert.True(entries.MoveNext());
+        entries.Reset();
+        Assert.True(entries.MoveNext());
+        Assert.Equal(firstEntry, entries.Current);
+        Assert.Equal(firstEntry, ((System.Collections.IEnumerator)entries).Current);
+
+        ReplicatedDictionary<int, int>.KeyCollection.Enumerator keyEnumerator = keys.GetEnumerator();
+        Assert.True(keyEnumerator.MoveNext());
+        int firstKey = keyEnumerator.Current;
+        Assert.True(keyEnumerator.MoveNext());
+        keyEnumerator.Reset();
+        Assert.True(keyEnumerator.MoveNext());
+        Assert.Equal(firstKey, keyEnumerator.Current);
+
+        ReplicatedDictionary<int, int>.ValueCollection.Enumerator valueEnumerator = values.GetEnumerator();
+        Assert.True(valueEnumerator.MoveNext());
+        int firstValue = valueEnumerator.Current;
+        valueEnumerator.Reset();
+        Assert.True(valueEnumerator.MoveNext());
+        Assert.Equal(firstValue, valueEnumerator.Current);
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (int key in keys)
+            {
+                dictionary.Add(key + 100, 0);
+            }
+        });
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (int value in values)
+            {
+                dictionary.Add(value + 1000, 0);
+            }
+        });
+
+        int sum = 0;
+        AllocationAssert.DoesNotAllocate(() =>
+        {
+            foreach (KeyValuePair<int, int> pair in dictionary)
+            {
+                sum += pair.Value;
+            }
+
+            foreach (int key in dictionary.Keys)
+            {
+                sum += key;
+            }
+
+            foreach (int value in dictionary.Values)
+            {
+                sum += value;
+            }
+        });
+        Assert.NotEqual(0, sum);
     }
 
     // ---------- value values ----------

@@ -76,7 +76,7 @@ internal static class SchemaHash
 
     /// <summary>
     /// Дописывает описание кодека: его тип и параметры, влияющие на формат на проводе
-    /// (ширина перечисления, лимит строки, внутренний кодек <see cref="Nullable{T}"/>).
+    /// (ширина и максимальное значение перечисления, лимит строки, внутренний кодек <see cref="Nullable{T}"/>).
     /// Для пользовательских кодеков учитывается только тип кодека.
     /// </summary>
     public static void AppendCodec(StringBuilder sb, object codec)
@@ -102,7 +102,17 @@ internal static class SchemaHash
                 .GetValue(codec);
             object compact = type.GetProperty(nameof(EnumCodec<DayOfWeek>.IsCompact), BindingFlags.Public | BindingFlags.Instance)
                 .GetValue(codec);
-            sb.Append("(bits=").Append((int)bitCount).Append(",compact=").Append((bool)compact ? '1' : '0').Append(')');
+            sb.Append("(bits=").Append((int)bitCount).Append(",compact=").Append((bool)compact ? '1' : '0');
+            if ((bool)compact)
+            {
+                // Максимум входит в хэш, даже если число бит не изменилось: получатель со старым максимумом
+                // отверг бы новые значения как ошибку формата.
+                object maxDefined = type.GetProperty(nameof(EnumCodec<DayOfWeek>.MaxDefinedValue),
+                    BindingFlags.Public | BindingFlags.Instance).GetValue(codec);
+                sb.Append(",max=").Append((ulong)maxDefined);
+            }
+
+            sb.Append(')');
         }
         else if (definition == typeof(NullableCodec<>))
         {
