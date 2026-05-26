@@ -1,9 +1,5 @@
 # Godot 4+ specific ignores
-.godot/
-.abrodot/
-/android/
 *.csproj.old*
-/.idea/*/.idea/sonarlint/
 .idea/
 .vscode/
 
